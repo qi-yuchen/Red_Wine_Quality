@@ -1,0 +1,117 @@
+---
+title: "Untitled"
+author: "Gaotong LIU"
+date: "5/17/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+library(mgcv)
+library(tidyverse)
+library(ggplot2)
+library(glmnet)
+library(corrplot)
+library(patchwork)
+library(AppliedPredictiveModeling)
+
+### boosting
+library(gbm)
+
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+```
+
+```{r}
+df.raw = read_csv("winequality-red.csv")
+df = df.raw %>% 
+  janitor::clean_names() %>% 
+  mutate(quality = factor(quality, 
+                             labels = c("q3","q4","q5","q6","q7","q8"))) %>% 
+  mutate(quality = fct_collapse(quality,
+                                poor = c("q3","q4","q5"),
+                                good = c("q6","q7","q8")))
+
+set.seed(1)
+rowTrain <- createDataPartition(y = df$quality,
+                                p = 2/3,
+                                list = FALSE)
+df.train = df[rowTrain,]
+x = model.matrix(quality~., df.train)[,-1]
+y = df.train$quality
+df.test = df[-rowTrain,]
+
+```
+
+# Models
+```{r}
+ctrl1 =  trainControl(method = "cv", number = 5,
+                      summaryFunction = twoClassSummary,
+                      classProbs = TRUE)
+
+ctrl2 =  trainControl(method = "repeatedcv",repeats = 5,
+                      summaryFunction = multiClassSummary,
+                      classProbs = TRUE)
+
+ctrl3 =  trainControl(method = "cv", number = 10,
+                      summaryFunction = multiClassSummary,
+                      classProbs = TRUE)
+```
+
+## boositng- AdaBoost
+
+```{r}
+
+gbmA.grid <- expand.grid(n.trees = c(2000, 3000, 4000),
+                        interaction.depth = 10:12,
+                        shrinkage = c(0.001,0.003,0.005),
+                        n.minobsinnode = 6:8)
+set.seed(1)
+# adaboost loss function
+gbmA.fit <- train(quality~., 
+                  df.train, 
+                 tuneGrid = gbmA.grid,
+                 trControl = ctrl1,
+                 method = 'gbm',
+                 distribution = "adaboost",
+                 metric = "ROC",
+                 verbose = FALSE)
+ggplot(gbmA.fit, highlight = TRUE)
+gbmA.fit$bestTune
+gbmA.pred <- predict(gbmA.fit, newdata = dat[-rowTrain,], type = "prob")[,1]
+```
+
+#Multiclass
+```{r}
+ctrl1 =  trainControl(method = "cv", number = 5,
+                      summaryFunction = multiClassSummary,
+                      classProbs = TRUE)
+gbmA.grid <- expand.grid(n.trees = c(2000),
+                        interaction.depth = 1,
+                        shrinkage = c(0.003),
+                        n.minobsinnode = 1)
+set.seed(1)
+# multinomial loss function- multiclass
+gbmM.fit <- train(quality~., 
+                  df.train, 
+                 tuneGrid = gbmA.grid,
+                 trControl = ctrl1,
+                 method = 'gbm',
+                 distribution = "multinomial",
+                 metric = "ROC",
+                 verbose = FALSE)
+ggplot(gbmA.fit, highlight = TRUE)
+
+gbmA.pred <- predict(gbmA.fit, newdata = dat[-rowTrain,], type = "prob")[,1]
+```
