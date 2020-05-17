@@ -1,0 +1,41 @@
+---
+title: "code"
+author: "Qi Yuchen, yq2279"
+date: "2020/5/16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+library(mgcv)
+library(tidyverse)
+library(ggplot2)
+library(glmnet)
+library(corrplot)
+library(patchwork)
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+```
+
+## data imput
+
+First, we identify the missing values in the dataset. As is shown in the table below, there is no variable containing missing data.
+
+```{r}
+df.raw = read_csv("winequality-red.csv")
+# check NA data
+df.na = is.na(df.raw)
+var.na = colSums(df.na)
+var.na
+```
+
+
