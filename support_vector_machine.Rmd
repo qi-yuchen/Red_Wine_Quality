@@ -1,0 +1,167 @@
+---
+title: "SVM"
+author: "Qi Yuchen, yq2279; Jiafei Li, jl5548; Gaotong Liu, "
+date: "2020/5/16"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(caret)
+library(mgcv)
+library(tidyverse)
+library(ggplot2)
+library(glmnet)
+library(corrplot)
+library(patchwork)
+library(AppliedPredictiveModeling)
+library(mlbench)
+library(e1071)
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+```
+
+
+# Introduction
+
+This final project aims to find an optimal model in order to better predict red wine quality based on physicochemical tests. The original dataset contains 1599 observations of 11 covariates from physicochemical test, and 1 response variable (wine quality), describing features of the Portuguese red wine "Vinho Verde". 
+
+
+## Data Preparation
+
+First, we identify the missing values in the dataset. As a result, there is no variable containing missing data.
+
+```{r}
+df.raw = read_csv("winequality-red.csv")
+# check NA data
+df.na = is.na(df.raw)
+var.na = colSums(df.na)
+```
+
+Then we clean the dataset, and get the training and test data.
+
+```{r}
+df = df.raw %>% 
+  janitor::clean_names() %>% 
+  mutate(quality = factor(quality, labels = c("q3", "q4", "q5", "q6", "q7", "q8"))) %>% 
+  mutate(quality = fct_collapse(quality, 
+                                poor = c("q3", "q4", "q5"),
+                                good = c("q6", "q7", "q8")))
+
+set.seed(1)
+rowTrain <- createDataPartition(y = df$quality,
+                                p = 2/3,
+                                list = FALSE)
+df.train = df[rowTrain,]
+x = model.matrix(quality~., df.train)[,-1]
+y = df.train$quality
+df.test = df[-rowTrain,]
+
+levels(df$quality) # 2 levels: poor and good
+```
+
+
+
+# Exploratory analysis
+
+## Correlations 
+
+11 predictors are all numerical variables. There is no strong correlation (>0.7) between them. 
+
+```{r}
+var.numerical = df.train %>% dplyr::select_if(is.numeric) %>% as.matrix()
+var.cor = cor(var.numerical)
+
+corrplot(cor(var.numerical), method = "square", type = "full")
+
+which((var.cor > 0.7 & var.cor < 1), arr.ind = TRUE)
+```
+
+## Scatter plot 
+
+```{r}
+theme1 <- transparentTheme(trans = .4)
+trellis.par.set(theme1)
+
+featurePlot(x, 
+            y,
+            scales = list(x=list(relation="free"), 
+                          y=list(relation="free")),
+            plot = "density", pch = "|", 
+            auto.key = list(columns = 2))
+```
+
+
+
+# Models
+
+## Support Vector Machine
+
+### Linear kernel
+
+```{r}
+ctrl <- trainControl(method = "cv") 
+set.seed(1)
+svmlinear.fit <- train(quality~., 
+                  data = df.train,
+                  method = "svmLinear2", 
+                  preProcess = c("center", "scale"), 
+                  tuneGrid = data.frame(cost = exp(seq(-5, 1, len=30))),
+                  trControl = ctrl)
+ggplot(svmlinear.fit, highlight = TRUE) 
+svmlinear.fit$bestTune
+
+# train error
+pred.svmlinear.train <- predict(svmlinear.fit$finalModel, data = df.train)
+confusionMatrix(data = pred.svmlinear.train, 
+                reference = df$quality[rowTrain])
+# test error
+pred.svmlinear.test <- predict(svmlinear.fit, newdata = df.test)
+confusionMatrix(data = pred.svmlinear.test, 
+                reference = df$quality[-rowTrain])
+```
+__Comment__: By 10 fold cross validation using `train()` function from caret package, the best cost tuning parameter is 0.519. Then train misclassification error of this linear SVM on entire train dataset is 1-0.7458 = 0.2542. The test missclassification error is 1-0.743 = 0.257. The test error is slightly greater than train error, so our model seems to be a good fit.
+
+### Radial kernel
+
+Different from the linear kernel, radial kernel can construct nonlinear classification boundaries.
+
+```{r}
+svmr.grid <- expand.grid(C = exp(seq(-4, 5,len=10)),
+                         sigma = exp(seq(-8,-3,len=5))) 
+set.seed(1)             
+svmradial.fit <- train(quality~., 
+                       data = df, 
+                       subset = rowTrain,
+                       method = "svmRadial",
+                       preProcess = c("center", "scale"),
+                       tuneGrid = svmr.grid,             
+                       trControl = ctrl)
+ggplot(svmradial.fit, highlight = TRUE) 
+svmradial.fit$bestTune 
+
+# train error
+pred.svmradial.train <- predict(svmradial.fit, newdata = df.train)
+confusionMatrix(data = pred.svmradial.train, 
+                reference = df$quality[rowTrain])
+# test error
+pred.svmradial.test <- predict(svmradial.fit, newdata = df.test)
+confusionMatrix(data = pred.svmradial.test, 
+                reference = df$quality[-rowTrain])
+```
+
+__Comment__: The best tuning parameter is sigma = 0.050, C = 54.598, the train error is 1 - 0.8565 = 0.1435, and the test error is 1- 0.7598 = 0.2402. Both the train and test errors are smaller than the linear kernel SVM.
+
+# Conclusion
+
+
+
+
