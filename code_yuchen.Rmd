@@ -38,4 +38,55 @@ var.na = colSums(df.na)
 var.na
 ```
 
+Then we clean the dataset, and get the training and test data.
+
+```{r}
+df = df.raw %>% 
+  janitor::clean_names() %>% 
+  mutate(quality = as.factor(quality))
+
+set.seed(1)
+rowTrain <- createDataPartition(y = df$quality,
+                                p = 2/3,
+                                list = FALSE)
+df.train = df[rowTrain,]
+x = model.matrix(quality~., df.train)[,-1]
+y = df.train$quality
+df.test = df[-rowTrain,]
+
+levels(df$quality) # 6 levels
+```
+
+## Exploratory analysis
+
+## Correlations 
+
+11 predictors are all numerical variables. There is no strong correlation (>0.7) between them. 
+
+```{r}
+var.numerical = df.train %>% dplyr::select_if(is.numeric) %>% as.matrix()
+var.cor = cor(var.numerical)
+
+corrplot(cor(var.numerical), method = "square", type = "full")
+
+which((var.cor > 0.7 & var.cor < 1), arr.ind = TRUE)
+```
+
+## Scatter plot 
+
+```{r}
+# null
+theme1 <- trellis.par.get()
+theme1$plot.symbol$col <- rgb(.2, .4, .2, .5)
+theme1$plot.symbol$pch <- 16
+theme1$plot.line$col <- rgb(.8, .1, .1, 1)
+theme1$plot.line$lwd <- 2
+theme1$strip.background$col <- rgb(.0, .2, .6, .2)
+trellis.par.set(theme1)
+featurePlot(x, y, plot = "scatter", labels = c("","Y"),
+            type = c("p"), layout = c(4, 2))
+```
+
+
+# Models
 
