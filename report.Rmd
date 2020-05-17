@@ -1,0 +1,107 @@
+---
+title: "code"
+author: "Qi Yuchen, yq2279; Jiafei Li, jl5548; Gaotong Liu, "
+date: "2020/5/16"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(caret)
+library(mgcv)
+library(tidyverse)
+library(ggplot2)
+library(glmnet)
+library(corrplot)
+library(patchwork)
+library(AppliedPredictiveModeling)
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+```
+
+
+# Introduction
+
+This final project aims to find an optimal model in order to better predict red wine quality based on physicochemical tests. The original dataset contains 1599 observations of 11 covariates from physicochemical test, and 1 response variable (wine quality), describing features of the Portuguese red wine "Vinho Verde". 
+
+
+## Data Preparation
+
+First, we identify the missing values in the dataset. As a result, there is no variable containing missing data.
+
+```{r}
+df.raw = read_csv("winequality-red.csv")
+# check NA data
+df.na = is.na(df.raw)
+var.na = colSums(df.na)
+```
+
+Then we clean the dataset, and get the training and test data.
+
+```{r}
+df = df.raw %>% 
+  janitor::clean_names() %>% 
+  mutate(quality = as.factor(quality))
+
+set.seed(1)
+rowTrain <- createDataPartition(y = df$quality,
+                                p = 2/3,
+                                list = FALSE)
+df.train = df[rowTrain,]
+x = model.matrix(quality~., df.train)[,-1]
+y = df.train$quality
+df.test = df[-rowTrain,]
+
+levels(df$quality) # 6 levels
+```
+
+
+
+# Exploratory analysis
+
+## Correlations 
+
+11 predictors are all numerical variables. There is no strong correlation (>0.7) between them. 
+
+```{r}
+var.numerical = df.train %>% dplyr::select_if(is.numeric) %>% as.matrix()
+var.cor = cor(var.numerical)
+
+corrplot(cor(var.numerical), method = "square", type = "full")
+
+which((var.cor > 0.7 & var.cor < 1), arr.ind = TRUE)
+```
+
+## Scatter plot 
+
+```{r}
+theme1 <- transparentTheme(trans = .4)
+trellis.par.set(theme1)
+
+featurePlot(x, 
+            y,
+            scales = list(x=list(relation="free"), 
+                          y=list(relation="free")),
+            plot = "density", pch = "|", 
+            auto.key = list(columns = 2))
+```
+
+
+
+# Models
+
+
+
+# Conclusion
+
+
+
+
