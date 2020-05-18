@@ -1,0 +1,281 @@
+---
+title: "models"
+author: "Gaotong LIU"
+date: "5/17/2020"
+output: pdf_document
+editor_options: 
+  chunk_output_type: console
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      error = TRUE)
+library(caret)
+library(mgcv)
+library(tidyverse)
+library(ggplot2)
+library(glmnet)
+library(corrplot)
+library(patchwork)
+library(AppliedPredictiveModeling)
+## random forest
+library(skimr)
+library(rpart.plot)
+library(pROC)
+
+### boosting
+library(gbm)
+
+## SVM
+library(mlbench)
+library(e1071)
+
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+```
+
+
+```{r}
+df.raw = read_csv("winequality-red.csv")
+df = df.raw %>% 
+  janitor::clean_names() %>% 
+  mutate(quality = factor(quality, 
+                             labels = c("q3","q4","q5","q6","q7","q8"))) %>% 
+  mutate(quality = fct_collapse(quality,
+                                poor = c("q3","q4","q5"),
+                                good = c("q6","q7","q8")))
+
+set.seed(1)
+rowTrain <- createDataPartition(y = df$quality,
+                                p = 2/3,
+                                list = FALSE)
+df.train = df[rowTrain,]
+x = model.matrix(quality~., df.train)[,-1]
+y = df.train$quality
+df.test = df[-rowTrain,]
+
+```
+
+```{r}
+ctrl1 <- trainControl(method = "repeatedcv",
+                     summaryFunction = twoClassSummary,
+                     classProbs = TRUE)
+
+ctrl <- trainControl(method = "cv",number = 5,
+                     summaryFunction = twoClassSummary,
+                     classProbs = TRUE)
+```
+
+## LDA and QDA
+
+```{r}
+set.seed(1)
+model.lda <- train(quality~., df, 
+                   subset = rowTrain,
+                   method = "lda",
+                   metric = "ROC",
+                   trControl = ctrl)
+lda.pred <- predict(model.lda, newdata = df[-rowTrain,], type = "prob")[,1]
+set.seed(1)
+model.qda <- train(quality~., df, 
+                   subset = rowTrain,
+                   method = "qda",
+                   metric = "ROC",
+                   trControl = ctrl)
+qda.pred <- predict(model.qda, newdata = df[-rowTrain,], type = "prob")[,1]
+```
+
+
+## KNN
+
+```{r}
+set.seed(1)
+knn.fit <- train(quality~., df, 
+                   subset = rowTrain,
+                   method = "knn",
+                   preProcess = c("center","scale"),
+                   tuneGrid = data.frame(k = seq(1,200,by=5)),
+                   trControl = ctrl)
+
+ggplot(knn.fit)
+knn.pred <- predict(knn.fit, newdata = df[-rowTrain,], type = "prob")[,1]
+```
+
+
+## Classification tree
+
+```{r}
+set.seed(1)
+rpart.fit <- train(quality~., df, 
+                   subset = rowTrain,
+                   method = "rpart",
+                   tuneGrid = data.frame(cp = exp(seq(-8,-5, len = 20))),
+                   trControl = ctrl,
+                   metric = "ROC")
+ggplot(rpart.fit, highlight = TRUE)
+rpart.plot(rpart.fit$finalModel)
+rpart.pred <- predict(rpart.fit, newdata = df[-rowTrain,], type = "prob")[,1]
+```
+
+## Random forests
+
+```{r}
+rf.grid <- expand.grid(mtry = 1:6,
+                       splitrule = "gini",
+                       min.node.size = 1:6)
+set.seed(1)
+rf.fit <- train(quality~., df, 
+                subset = rowTrain,
+                method = "ranger",
+                tuneGrid = rf.grid,
+                metric = "ROC",
+                trControl = ctrl)
+
+ggplot(rf.fit, highlight = TRUE)
+
+rf.pred <- predict(rf.fit, newdata = df[-rowTrain,], type = "prob")[,1]
+roc.rf <- roc(df$quality[-rowTrain], rf.pred)
+plot(roc.rf)
+auc <- roc.rf$auc[1]
+modelNames <- "rf"
+legend("bottomright", legend = paste0(modelNames, ": ", round(auc,3)),
+       col = 1:6, lwd = 2)
+```
+
+## boositng- AdaBoost
+
+```{r}
+
+gbmA.grid <- expand.grid(n.trees = c(2000, 3000, 4000),
+                        interaction.depth = 10:12,
+                        shrinkage = c(0.001,0.003,0.005),
+                        n.minobsinnode = 6:8)
+set.seed(1)
+# adaboost loss function
+gbmA.fit <- train(quality~., 
+                  df, 
+                   subset = rowTrain,
+                 tuneGrid = gbmA.grid,
+                 trControl = ctrl,
+                 method = 'gbm',
+                 distribution = "adaboost",
+                 metric = "ROC",
+                 verbose = FALSE)
+ggplot(gbmA.fit, highlight = TRUE)
+gbmA.fit$bestTune
+gbmA.pred <- predict(gbmA.fit, newdata = df[-rowTrain,], type = "prob")[,1]
+```
+
+## Support Vector Machine
+
+### Linear kernel
+
+```{r}
+set.seed(1)
+svmlinear.fit <- train(quality~., 
+                  df, 
+                   subset = rowTrain,
+                  method = "svmLinear2", 
+                  preProcess = c("center", "scale"), 
+                  tuneGrid = data.frame(cost = exp(seq(-5, 1, len=30))),
+                  trControl = ctrl)
+ggplot(svmlinear.fit, highlight = TRUE) 
+svmlinear.fit$bestTune
+svml.pred <- predict(svmlinear.fit, newdata = df[-rowTrain,], type = "prob")[,1]
+# train error
+pred.svmlinear.train <- predict(svmlinear.fit$finalModel, data = df.train)
+confusionMatrix(data = pred.svmlinear.train, 
+                reference = df$quality[rowTrain])
+# test error
+pred.svmlinear.test <- predict(svmlinear.fit, newdata = df.test)
+confusionMatrix(data = pred.svmlinear.test, 
+                reference = df$quality[-rowTrain])
+```
+__Comment__: By 10 fold cross validation using `train()` function from caret package, the best cost tuning parameter is 0.519. Then train misclassification error of this linear SVM on entire train dataset is 1-0.7458 = 0.2542. The test missclassification error is 1-0.743 = 0.257. The test error is slightly greater than train error, so our model seems to be a good fit.
+
+### Radial kernel
+
+Different from the linear kernel, radial kernel can construct nonlinear classification boundaries.
+
+```{r}
+svmr.grid <- expand.grid(C = exp(seq(-4, 5,len=10)),
+                         sigma = exp(seq(-8,-3,len=5))) 
+set.seed(1)             
+svmradial.fit <- train(quality~., 
+                       data = df, 
+                       subset = rowTrain,
+                       method = "svmRadial",
+                       preProcess = c("center", "scale"),
+                       tuneGrid = svmr.grid,             
+                       trControl = ctrl)
+ggplot(svmradial.fit, highlight = TRUE) 
+svmradial.fit$bestTune 
+svmr.pred <- predict(svmradial.fit, newdata = df[-rowTrain,], type = "prob")[,1]
+# train error
+pred.svmradial.train <- predict(svmradial.fit, newdata = df.train)
+confusionMatrix(data = pred.svmradial.train, 
+                reference = df$quality[rowTrain])
+# test error
+pred.svmradial.test <- predict(svmradial.fit, newdata = df.test)
+confusionMatrix(data = pred.svmradial.test, 
+                reference = df$quality[-rowTrain])
+```
+
+__Comment__: The best tuning parameter is sigma = 0.050, C = 54.598, the train error is 1 - 0.8565 = 0.1435, and the test error is 1- 0.7598 = 0.2402. Both the train and test errors are smaller than the linear kernel SVM.
+
+# Conclusion
+
+
+## performance
+
+```{r}
+resamp <- resamples(list(rf = rf.fit, 
+                         knn = knn.fit,
+                         lda = model.lda,
+                         qda = model.qda,
+                         rpart = rpart.fit,
+                         boosting = gbmA.fit,
+                         svmlinear = svmlinear.fit,
+                         svmradinal = svmradial.fit))
+summary(resamp)
+```
+
+```{r}
+roc.lda <- roc(df$quality[-rowTrain], lda.pred)
+roc.qda <- roc(df$quality[-rowTrain], qda.pred)
+roc.knn <- roc(df$quality[-rowTrain], knn.pred)
+roc.rf <- roc(df$quality[-rowTrain], rf.pred)
+roc.rpart <- roc(df$quality[-rowTrain], rpart.pred)
+roc.gbmA <- roc(df$quality[-rowTrain], gbmA.pred)
+roc.svml <- roc(df$quality[-rowTrain], svml.pred)
+roc.svmr <- roc(df$quality[-rowTrain], svmr.pred)
+
+
+
+plot(roc.lda)
+plot(roc.qda, add = TRUE, col = 2)
+plot(roc.knn, add = TRUE, col = 3)
+plot(roc.rf, add = TRUE, col = 4)
+plot(roc.rpart, add = TRUE, col = 5)
+plot(roc.gbmA, add = TRUE, col = 6)
+plot(roc.svml, add = TRUE, col = 7)
+plot(roc.svmr, add = TRUE, col = 8)
+
+
+auc <- c(roc.lda$auc[1], roc.qda$auc[1], roc.knn$auc[1],
+         roc.rf$auc[1], roc.rpart$auc[1], roc.gbmA$auc[1],
+         roc.svml$auc[1], roc.svmr$auc[1])
+
+modelNames <- c("lda","qda","knn","rf","rpart","gbmA",
+                "svml","svmr")
+legend("bottomright", legend = paste0(modelNames, ": ", round(auc,3)),
+       col = 1:8, lwd = 2)
+```
+
