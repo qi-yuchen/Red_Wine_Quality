@@ -20,7 +20,11 @@ library(patchwork)
 library(AppliedPredictiveModeling)
 library(skimr)
 library(rpart.plot)
+library(gbm)
+library(plotmo)
+library(pdp)
 library(pROC)
+library(lime)
 
 options(
   ggplot2.continuous.colour = "viridis",
@@ -105,7 +109,7 @@ featurePlot(x,
 # Models
 
 ```{r}
-ctrl <- trainControl(method = "repeatedcv",
+ctrl <- trainControl(method = "cv",
                      summaryFunction = twoClassSummary,
                      classProbs = TRUE)
 ```
@@ -184,6 +188,40 @@ legend("bottomright", legend = paste0(modelNames, ": ", round(auc,3)),
        col = 1:6, lwd = 2)
 ```
 
+## Boosting
+
+```{r}
+gbmA.grid <- expand.grid(n.trees = c(3000,4000,5000),
+                        interaction.depth = 19:24,
+                        shrinkage = c(0.003,0.004, 0.005),
+                        n.minobsinnode = 1)
+set.seed(1)
+# Adaboost loss function
+gbmA.fit <- train(quality~., df, 
+                 subset = rowTrain, 
+                 tuneGrid = gbmA.grid,
+                 trControl = ctrl,
+                 method = "gbm",
+                 distribution = "adaboost",
+                 metric = "ROC",
+                 verbose = FALSE)
+
+ggplot(gbmA.fit, highlight = TRUE)
+gbmA.fit$bestTune
+```
+
+ 
+ 
+n.trees
+<dbl>
+interaction.depth
+<int>
+shrinkage
+<dbl>
+n.minobsinnode
+<dbl>
+51	5000	23	0.005	
+
 ## performance
 
 ```{r}
@@ -191,7 +229,8 @@ resamp <- resamples(list(rf = rf.fit,
                          knn = knn.fit,
                          lda = model.lda,
                          qda = model.qda,
-                         rpart = rpart.fit))
+                         rpart = rpart.fit,
+                         boost = gbmA.fit))
 summary(resamp)
 ```
 
