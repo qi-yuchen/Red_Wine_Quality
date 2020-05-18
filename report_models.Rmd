@@ -387,8 +387,13 @@ plot_features(explanation.rf)
 
 After fitting a simple model around a single observation that mimic how th global model behaves at that locality. The prediction of two new observation can be explained by three features.
 
-The first new observation is labeled as good quality with probability 0.21. This observation has alcohol smaller than 9.5 and this feature associates with poor quality. This observation has sulphates smaller than 0.55 and this feature associates with poor quality.This observation has chlorides smaller than 0.07 and this feature associates with good quality. 
+The first new observation is labeled as good quality with probability 0.21. This observation has alcohol smaller than 9.5 and this feature negatively associates with good quality. This observation has sulphates smaller than 0.55 and this feature negatively associates with good quality.This observation has chlorides smaller than 0.07 and this feature positively associates with good quality. 
 
-The second new observation is labeled as good quality with probability 0.37. This observation has sulphates smaller than 0.55 and this feature associates with poor quality. This observation has density smaller than 0.996 and this feature associates with good quality.This observation has volatile_acidity larger than 0.64 and this feature associates with poor quality. 
+The second new observation is labeled as good quality with probability 0.37. This observation has sulphates smaller than 0.55 and this feature negatively associates with good quality. This observation has density smaller than 0.996 and this feature positively associates with good quality.This observation has volatile_acidity larger than 0.64 and this feature negatively associates with good quality. 
+
+```{r}
+plot_explanations(explanation.rf)
+```
+
 
 # Conclusion
