@@ -1,0 +1,194 @@
+---
+title: "Untitled"
+author: "Gaotong LIU"
+date: "5/17/2020"
+output: pdf_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(caret)
+library(mgcv)
+library(tidyverse)
+library(ggplot2)
+library(glmnet)
+library(corrplot)
+library(patchwork)
+library(AppliedPredictiveModeling)
+## random forest
+library(skimr)
+library(rpart.plot)
+library(pROC)
+
+### boosting
+library(gbm)
+
+## SVM
+library(mlbench)
+library(e1071)
+
+## rf :explanation plots
+library(ranger)
+library(pdp)
+library(lime)
+```
+
+## Random forests
+
+```{r}
+rf.grid <- expand.grid(mtry = 1:6,
+                       splitrule = "gini",
+                       min.node.size = 1:6)
+set.seed(1)
+rf.fit <- train(quality~., df, 
+                subset = rowTrain,
+                method = "ranger",
+                tuneGrid = rf.grid,
+                metric = "ROC",
+                trControl = ctrl)
+
+ggplot(rf.fit, highlight = TRUE)
+rf.fit$bestTune
+rf.pred <- predict(rf.fit, newdata = df[-rowTrain,], type = "prob")[,1]
+```
+
+#### variable importance
+```{r}
+set.seed(1)
+rf.final <- ranger(quality~., df[rowTrain,], 
+                        mtry = 1 ,
+                        min.node.size = 2,
+                        splitrule = "gini",
+                        importance = "permutation",
+                        scale.permutation.importance = TRUE) 
+
+barplot(sort(ranger::importance(rf.final), decreasing = FALSE), 
+        las = 1, horiz = TRUE, cex.names = 0.4,
+        col = colorRampPalette(colors = c("cyan","blue"))(11))
+sort(ranger::importance(rf.final), decreasing = FALSE)
+```
+
+First 4: alcohol, total_sulfur_dioxide, volatile_acidity,
+density
+
+#### PDP
+```{r}
+pdp.rf <- rf.fit %>% 
+  partial(pred.var = "alcohol", 
+          grid.resolution = 100,
+          prob = TRUE) %>%
+  autoplot(rug = TRUE, train = df[rowTrain,]) +
+  ggtitle("Random forest") 
+```
+
+#### ICE
+```{r}
+ice1.rf <- rf.fit %>% 
+  partial(pred.var = "alcohol", 
+          grid.resolution = 100,
+          ice = TRUE,
+          prob = TRUE) %>%
+  autoplot(train = df[rowTrain,], alpha = .1) +
+  ggtitle("Random forest, non-centered") 
+
+ice2.rf <- rf.fit %>% 
+  partial(pred.var = "alcohol", 
+          grid.resolution = 100,
+          ice = TRUE,
+          prob = TRUE) %>%
+  autoplot(train = df[rowTrain,], alpha = .1, 
+           center = TRUE) +
+  ggtitle("Random forest, centered") 
+
+grid.arrange(ice1.rf, ice2.rf,
+             nrow = 1, ncol = 2)
+```
+
+
+```{r, warning=FALSE}
+new_obs <- df[-rowTrain,-12][1:2,]
+explainer.rf <- lime(df[rowTrain,-12], rf.fit)
+explanation.rf <- explain(new_obs, explainer.rf, 
+                          n_features = 11,
+                          labels = "good")
+plot_features(explanation.rf)
+```
+
+## boosting
+
+```{r}
+gbmA.grid <- expand.grid(n.trees = c(2000, 3000, 4000),
+                        interaction.depth = 10:12,
+                        shrinkage = c(0.001,0.003,0.005),
+                        n.minobsinnode = 6:8)
+set.seed(1)
+# adaboost loss function
+gbmA.fit <- train(quality~., 
+                  df, 
+                   subset = rowTrain,
+                 tuneGrid = gbmA.grid,
+                 trControl = ctrl,
+                 method = 'gbm',
+                 distribution = "adaboost",
+                 metric = "ROC",
+                 verbose = FALSE)
+ggplot(gbmA.fit, highlight = TRUE)
+gbmA.fit$bestTune
+gbmA.pred <- predict(gbmA.fit, newdata = df[-rowTrain,], type = "prob")[,1]
+```
+
+#### variable importance
+```{r}
+summary(gbmA.fit$finalModel, las = 2, cBars = 19, cex.names = 0.4)[1:4, ]
+```
+
+First  4: alcohol, sulphates, , volatile_acidity, total_sulfur_dioxide
+
+#### PDP
+```{r}
+pdp.gbm <- gbmA.fit %>% 
+  partial(pred.var = "alcohol", 
+          grid.resolution = 100,
+          prob = TRUE) %>%
+  autoplot(rug = TRUE, train = df[rowTrain,]) +
+  ggtitle("Boosting")
+
+grid.arrange(pdp.rf, pdp.gbm, nrow = 1)
+```
+
+#### ICE
+```{r}
+ice1.gbm <- gbmA.fit %>% 
+  partial(pred.var = "alcohol", 
+          grid.resolution = 100,
+          ice = TRUE,
+          prob = TRUE) %>%
+  autoplot(train = df[rowTrain,], alpha = .1) +
+  ggtitle("Boosting, non-centered") 
+
+ice2.gbm <- gbmA.fit %>% 
+  partial(pred.var = "alcohol", 
+          grid.resolution = 100,
+          ice = TRUE,
+          prob = TRUE) %>%
+  autoplot(train = df[rowTrain,], alpha = .1, 
+           center = TRUE) +
+  ggtitle("Boosting, centered") 
+
+grid.arrange(ice1.gbm, ice2.gbm,
+             nrow = 1, ncol = 2)
+```
+
+### Explain your prediction
+
+```{r, warning=FALSE}
+new_obs <- df[-rowTrain,-12][1:2,]
+explainer.gbm <- lime(df[rowTrain,-12], gbmA.fit)
+explanation.gbm <- explain(new_obs, explainer.gbm, 
+                           n_features = 11,
+                           labels = "good")
+plot_features(explanation.gbm)
+```
