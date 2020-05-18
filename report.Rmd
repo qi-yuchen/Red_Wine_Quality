@@ -89,7 +89,7 @@ which((var.cor > 0.7 & var.cor < 1), arr.ind = TRUE)
 ```
 
 
-## Scatter plot 
+## Density plot 
 
 ```{r}
 theme1 <- transparentTheme(trans = .4)
@@ -103,7 +103,7 @@ featurePlot(x,
             auto.key = list(columns = 2))
 ```
 
-As shown in the scatter plots, the predictors ph and density have normal distribution, and all other predictors are right skewed. _(...?)_
+As shown in the plots, the predictors ph ,sulphates, free sulfur dioxide, and residual sugar have similar distributions for the good and poor quality, and other predictors which do not may be important predictors.
 
 
 
@@ -218,10 +218,10 @@ The tuning parameters are mtry (m) with optimal value `r  rf.fit$bestTune$mtry` 
 
 ```{r}
 
-gbmA.grid <- expand.grid(n.trees = c(2000, 3000, 4000),
-                        interaction.depth = 10:12,
-                        shrinkage = c(0.001,0.003,0.005),
-                        n.minobsinnode = 6:8)
+gbmA.grid <- expand.grid(n.trees = c(4000,5000,6000),
+                        interaction.depth = 19:24,
+                        shrinkage = c(0.004,0.005,0.006),
+                        n.minobsinnode = 1)
 set.seed(1)
 # adaboost loss function
 gbmA.fit <- train(quality~., 
@@ -317,8 +317,6 @@ resamp <- resamples(list(rf = rf.fit,
 summary(resamp)
 ```
 
-
-
 ```{r}
 roc.lda <- roc(df$quality[-rowTrain], lda.pred)
 roc.qda <- roc(df$quality[-rowTrain], qda.pred)
@@ -351,7 +349,7 @@ legend("bottomright", legend = paste0(modelNames, ": ", round(auc,3)),
        col = 1:8, lwd = 2)
 ```
 
-From summary table of training cross validation performence, random forest has largest mean ROC. In addition, from the  plot of AUC using test data, random forest  has the best test performance.
+From summary table of training cross validation performence, random forest has largest mean ROC. In addition, from the plot of AUC using test data, random forest has the best test performance.
 
 
 #### variable importance
@@ -383,7 +381,7 @@ pdp.rf <- rf.fit %>%
   ggtitle("Random forest") 
 ```
 
-The most important variable `alcohol` is chosen to investigate the typical influence on red  wine quality across all observations. From the partial dependence plot, the higher the alcohol, the lower the quality after averaging all the effects of other predictors.
+The most important variable `alcohol` is chosen to investigate the typical influence on red wine quality across all observations. From the partial dependence plot, the higher the alcohol, the lower the quality after averaging all the effects of other predictors.
 
 
 #### ICE
@@ -432,6 +430,15 @@ The second new observation is labeled as good quality with probability 0.37. Thi
 
 # Conclusion
 
+The performance of our models is evaluated based on ROC. The random forest model gives the best prediction performance with the ROC mean 0.871 based on training data. Thus, for the red wine quality, we may choose random forest to predict whether it is poor or good. The test classification error rate is 0.19 based on the confusion matrix below. 
 
+We expect that predictors having different distributions in the good and poor quality groups are important predictors, and among those predictors `alcohol`, `total_sulfur_dioxide`, `volatile_acidity` do play important roles of predicting red wine quality. As for the model, it is expected that the boosting model will perform best, and the lack of sufficient parameter tuning may account for the choice of random forest instead. We tried different tuning grids, and to find the best tuning parameters we need to expand the tuning grid, but it exceeds our computer capacity. Alternatively, random forest may be the optimal solution for this dataset.
+
+```{r}
+rf.pred <- predict(rf.fit, newdata = df[-rowTrain,])
+confusionMatrix(data = rf.pred,
+                reference = df$quality[-rowTrain],
+                positive = "good")
+```
 
 
