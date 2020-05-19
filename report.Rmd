@@ -218,9 +218,9 @@ The tuning parameters are mtry (m) with optimal value `r  rf.fit$bestTune$mtry` 
 
 ```{r}
 
-gbmA.grid <- expand.grid(n.trees = c(4000,5000,6000),
+gbmA.grid <- expand.grid(n.trees = c(4000,5000),
                         interaction.depth = 19:24,
-                        shrinkage = c(0.004,0.005,0.006),
+                        shrinkage = c(0.004,0.005),
                         n.minobsinnode = 1)
 set.seed(1)
 # adaboost loss function
