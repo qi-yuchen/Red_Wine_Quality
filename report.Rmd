@@ -1,13 +1,12 @@
 ---
 title: "Red Wine Quality Prediction"
-author: "Qi Yuchen, yq2279; Jiafei Li, jl5548; Gaotong Liu, gl2677"
+author: "Jiafei Li, jl5548; Gaotong Liu, gl2677; Yuchen Qi, yq2279"
 date: "2020/5/16"
 output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE,
-                      error = TRUE)
+knitr::opts_chunk$set(eval = FALSE,message = FALSE,warning = FALSE, include  = FALSE)
 library(caret)
 library(mgcv)
 library(tidyverse)
@@ -20,6 +19,7 @@ library(AppliedPredictiveModeling)
 library(skimr)
 library(rpart.plot)
 library(pROC)
+library(ranger)
 
 ### boosting
 library(gbm)
@@ -49,6 +49,7 @@ This final project aims to find an optimal model in order to better predict red 
 ## Data Preparation
 
 ### Missing data and Variable type
+
 We first examined variable types and missing values of the dataset. As a result, all variables are numeric and there is no variable containing missing data. We converted the response variable "quality" to factor variable of 6 levels, and collapsed them into 2 levels ("poor", "good") to balance the total count of different levels. Then we cleaned the dataset, and partitioned the dataset to get training and testing data.
 
 ```{r}
@@ -70,7 +71,6 @@ x = model.matrix(quality~., df.train)[,-1]
 y = df.train$quality
 df.test = df[-rowTrain,]
 ```
-
 
 
 # Exploratory analysis
@@ -112,13 +112,10 @@ As shown in the plots, the predictors ph, sulphates, free sulfur dioxide, and re
 All the 11 numeric predictors were included in the models. 8 classification models were used to predict the quality of the red wine (poor and good).
 
 ```{r}
-ctrl <- trainControl(method = "repeatedcv",number = 5,
+ctrl <- trainControl(method = "cv",
                      summaryFunction = twoClassSummary,
                      classProbs = TRUE)
 
-ctrl1 <- trainControl(method = "cv",number = 5,
-                     summaryFunction = twoClassSummary,
-                     classProbs = TRUE)
 ```
 
 #### Linear Discrimininant analysis (LDA)
@@ -148,7 +145,7 @@ qda.pred <- predict(model.qda, newdata = df[-rowTrain,], type = "prob")[,1]
 ```
 
 
-## k-Nearest-Neighbor classifiers (KNN)
+#### k-Nearest-Neighbor classifiers (KNN)
 
 
 ```{r}
@@ -160,12 +157,12 @@ knn.fit <- train(quality~., df,
                    tuneGrid = data.frame(k = seq(1,200,by=5)),
                    trControl = ctrl)
 
-ggplot(knn.fit)
+#ggplot(knn.fit)
 
 knn.pred <- predict(knn.fit, newdata = df[-rowTrain,], type = "prob")[,1]
 ```
 
-It predicts class label given $x_0$ by finding k nearest points in distance to $x_0$ and then classify $x_0$ using majority vote among the kneighbors. The tuning parameter is k with optimal value `r knn.fit$bestTune$k` in the knn model.
+It predicts class label given $x_0$ by finding k nearest points in distance to $x_0$ and then classify $x_0$ using majority vote among the kneighbors. The tuning parameter is k with optimal value 41 in the knn model.
 
 
 #### Classification tree
@@ -178,15 +175,15 @@ rpart.fit <- train(quality~., df,
                    tuneGrid = data.frame(cp = exp(seq(-8,-5, len = 20))),
                    trControl = ctrl,
                    metric = "ROC")
-ggplot(rpart.fit, highlight = TRUE)
-rpart.plot(rpart.fit$finalModel)
+#ggplot(rpart.fit, highlight = TRUE)
+#rpart.plot(rpart.fit$finalModel)
 rpart.pred <- predict(rpart.fit, newdata = df[-rowTrain,], type = "prob")[,1]
 
 ```
 
 Tree-based method uses recursive binary splitting to segment the predictor space into simple regions according to the largest reduction of total varaince across the k  classes(Gini index), then predict the class labels by the majority vote in the simple regions. Although single tree can  have small bias, the variance is quite large.
 
-CART approach is used to prune the classification tree. A large tree is grown at first and then prune it back by penalty for tree complexity($\alpha$ controls). The tuning parameter is cp($\alpha$) with optimal value `r  rpart.fit$bestTune$cp` in the single classificaton tree model(CART).
+CART approach is used to prune the classification tree. A large tree is grown at first and then prune it back by penalty for tree complexity($\alpha$ controls). The tuning parameter is cp($\alpha$) with optimal value 0.003583 in the single classificaton tree model(CART).
 
 
 #### Random Forest
@@ -211,27 +208,27 @@ rf.pred <- predict(rf.fit, newdata = df[-rowTrain,], type = "prob")[,1]
 
 Random Forest is one of the ensemble methods which uses collections of single trees to get better predictive performance(lower variance). Random Forest generate B different bootstrapped training data sets and the split in each tree is considered a random selection of m out of p(full set) predictors, then it  predicts the class labels by majority vote among B trees.
 
-The tuning parameters are mtry (m) with optimal value `r  rf.fit$bestTune$mtry` , min.node.size(minimal node size) with optimal value `r  rf.fit$bestTune$min.node.size`in random forest model.
+The tuning parameters are mtry (m) with optimal value 1, min.node.size(minimal node size) with optimal value 1 in random forest model.
 
 
 #### Boositng(AdaBoost)
 
 ```{r}
-gbmA.grid <- expand.grid(n.trees = c(4000,5000),
+gbmA.grid <- expand.grid(n.trees = c(3000,4000,5000),
                         interaction.depth = 19:24,
-                        shrinkage = c(0.004,0.005),
+                        shrinkage = c(0.003,0.004, 0.005),
                         n.minobsinnode = 1)
 set.seed(1)
-# adaboost loss function
-gbmA.fit <- train(quality~., 
-                  df, 
-                   subset = rowTrain,
+# Adaboost loss function
+gbmA.fit <- train(quality~., df, 
+                 subset = rowTrain, 
                  tuneGrid = gbmA.grid,
                  trControl = ctrl,
-                 method = 'gbm',
+                 method = "gbm",
                  distribution = "adaboost",
                  metric = "ROC",
                  verbose = FALSE)
+
 ggplot(gbmA.fit, highlight = TRUE)
 
 gbmA.pred <- predict(gbmA.fit, newdata = df[-rowTrain,], type = "prob")[,1]
@@ -239,7 +236,7 @@ gbmA.pred <- predict(gbmA.fit, newdata = df[-rowTrain,], type = "prob")[,1]
 
 Boosting grows tree uses information from previously grown trees. AdaBoost repeatedly fit classicication trees to weighted versions of training data and update the weights to better classify.
 
-The tuning parameter are n.trees(the number of trees) with optimal value`r gbmA.fit$bestTune$n.trees`, interaction.depth(the complexity of boosted ensemble) with optimal value`r gbmA.fit$bestTune$interaction.depth`, shrinkage(the rate of boosting learn) with optimal value`r gbmA.fit$bestTune$shrinkage`, n.minobsinnode(minimal node size) with optimal value`r gbmA.fit$bestTune$n.minobsinnode` in boosting model.
+The tuning parameter are n.trees(the number of trees) with optimal value 5000, interaction.depth(the complexity of boosted ensemble) with optimal value 23, shrinkage(the rate of boosting learn) with optimal value 0.005, n.minobsinnode(minimal node size) with optimal value 1 in boosting model.
 
 
 #### Support Vector Machine Linear kernel(SVML)
@@ -253,21 +250,21 @@ svmlinear.fit <- train(quality~.,
                   preProcess = c("center", "scale"), 
                   tuneGrid = data.frame(cost = exp(seq(-5, 1, len=30))),
                   trControl = ctrl)
-ggplot(svmlinear.fit, highlight = TRUE) 
+#ggplot(svmlinear.fit, highlight = TRUE) 
 
 svml.pred <- predict(svmlinear.fit, newdata = df[-rowTrain,], type = "prob")[,1]
 # train error
 pred.svmlinear.train <- predict(svmlinear.fit$finalModel, data = df.train)
-confusionMatrix(data = pred.svmlinear.train, 
-                reference = df$quality[rowTrain])
+#confusionMatrix(data = pred.svmlinear.train, 
+#               reference = df$quality[rowTrain])
 # test error
 pred.svmlinear.test <- predict(svmlinear.fit, newdata = df.test)
-confusionMatrix(data = pred.svmlinear.test, 
-                reference = df$quality[-rowTrain])
+#confusionMatrix(data = pred.svmlinear.test, 
+#               reference = df$quality[-rowTrain])
 
 ```
 
-SVM finds a hyperplane to separate the class in feature space and C, as a regularization parameter, controls the margin size and shows the tolerance for observations on the wrong side. Linear kernel has linear boundary. The tuning parameter is cost(C) with optimal value `r svmlinear.fit$bestTune$cost` in support vector machine with linear kernel. 
+SVM finds a hyperplane to separate the class in feature space and C, as a regularization parameter, controls the margin size and shows the tolerance for observations on the wrong side. Linear kernel has linear boundary. The tuning parameter is cost(C) with optimal value 0.01019 in support vector machine with linear kernel. 
 
 
 #### Support Vector Machine Radial kernel(SVMR)
@@ -284,25 +281,24 @@ svmradial.fit <- train(quality~.,
                        tuneGrid = svmr.grid,             
                        trControl = ctrl)
 ggplot(svmradial.fit, highlight = TRUE) 
-svmradial.fit$bestTune 
+#svmradial.fit$bestTune 
 svmr.pred <- predict(svmradial.fit, newdata = df[-rowTrain,], type = "prob")[,1]
 # train error
 pred.svmradial.train <- predict(svmradial.fit, newdata = df.train)
-confusionMatrix(data = pred.svmradial.train, 
-                reference = df$quality[rowTrain])
+#confusionMatrix(data = pred.svmradial.train, 
+#               reference = df$quality[rowTrain])
 # test error
 pred.svmradial.test <- predict(svmradial.fit, newdata = df.test)
-confusionMatrix(data = pred.svmradial.test, 
-                reference = df$quality[-rowTrain])
+#confusionMatrix(data = pred.svmradial.test, 
+#               reference = df$quality[-rowTrain])
 ```
 
 The best tuning parameter is sigma = 0.050, C = 54.598, the train error is 1 - 0.8565 = 0.1435, and the test error is 1- 0.7598 = 0.2402. Both the train and test errors are smaller than the linear kernel SVM.
 
-Different from the linear kernel, radial kernel can construct nonlinear classification boundaries. The tuning parameters are cost(C) with optimal value `r svmradial.fit$bestTune$cost` ,
-sigma($\gamma$, local behavior)in support vector machine with radinal kernel. 
+Different from the linear kernel, radial kernel can construct nonlinear classification boundaries. The tuning parameters are cost(C) with optimal value 20.0855, sigma($\gamma$, local behavior) 0.04978 in support vector machine with radinal kernel. 
 
 
-## performance
+## Performance
 
 ```{r}
 resamp <- resamples(list(rf = rf.fit, 
@@ -351,23 +347,23 @@ legend("bottomright", legend = paste0(modelNames, ": ", round(auc,3)),
 From summary table of training cross validation performence, random forest has largest mean ROC. In addition, from the plot of AUC using test data, random forest has the best test performance.
 
 
-#### variable importance
+#### Variable importance
 ```{r}
 set.seed(1)
 rf.final <- ranger(quality~., df[rowTrain,], 
                         mtry = 1 ,
-                        min.node.size = 2,
+                        min.node.size = 1,
                         splitrule = "gini",
                         importance = "permutation",
                         scale.permutation.importance = TRUE) 
 
 barplot(sort(ranger::importance(rf.final), decreasing = FALSE), 
-        las = 1, horiz = TRUE, cex.names = 0.4,
+        las = 1, horiz = TRUE, cex.names = 0.6,
         col = colorRampPalette(colors = c("cyan","blue"))(11))
-sort(ranger::importance(rf.final), decreasing = FALSE)
+#sort(ranger::importance(rf.final), decreasing = FALSE)
 ```
 
-The top three variables which play important roles of predicting red wine quality are `alcohol`, `total_sulfur_dioxide`, `volatile_acidity`.
+The top three variables which play important roles of predicting red wine quality are `alcohol`, `sulphates` and `volatile_acidity`.
 
 
 #### PDP
@@ -378,6 +374,7 @@ pdp.rf <- rf.fit %>%
           prob = TRUE) %>%
   autoplot(rug = TRUE, train = df[rowTrain,]) +
   ggtitle("Random forest") 
+pdp.rf
 ```
 
 The most important variable `alcohol` is chosen to investigate the typical influence on red wine quality across all observations. From the partial dependence plot, the higher the alcohol, the lower the quality after averaging all the effects of other predictors.
@@ -423,21 +420,86 @@ After fitting a simple model around a single observation that mimic how th globa
 
 The first new observation is labeled as good quality with probability 0.21. This observation has alcohol smaller than 9.5 and this feature associates with poor quality. This observation has sulphates smaller than 0.55 and this feature associates with poor quality.This observation has chlorides smaller than 0.07 and this feature associates with good quality. 
 
-The second new observation is labeled as good quality with probability 0.37. This observation has sulphates smaller than 0.55 and this feature associates with poor quality. This observation has density smaller than 0.996 and this feature associates with good quality.This observation has volatile_acidity larger than 0.64 and this feature associates with poor quality. 
+The second new observation is labeled as good quality with probability 0.38. This observation has sulphates smaller than 0.55 and this feature associates with poor quality. This observation has density smaller than 0.996 and this feature associates with good quality.This observation has volatile_acidity larger than 0.64 and this feature associates with poor quality. 
 
 
 
 # Conclusion
 
-The performance of our models is evaluated based on ROC. The random forest model gives the best prediction performance with the ROC mean 0.871 based on training data. Thus, for the red wine quality, we may choose random forest to predict whether it is poor or good. The test classification error rate is 0.19 based on the confusion matrix below. 
+The performance of our models is evaluated based on ROC. The random forest model gives the best prediction performance with the ROC mean 0.8797 based on training data. Thus, for the red wine quality, we may choose random forest to predict whether it is poor or good. The test classification error rate is 0.1932 based on the confusion matrix below. 
 
 We expect that predictors having different distributions in the good and poor quality groups are important predictors, and among those predictors `alcohol`, `total_sulfur_dioxide`, `volatile_acidity` do play important roles of predicting red wine quality. As for the model, it is expected that the boosting model will perform best, and the lack of sufficient parameter tuning may account for the choice of random forest instead. We tried different tuning grids, and to find the best tuning parameters we need to expand the tuning grid, but it exceeds our computer capacity. Alternatively, random forest may be the optimal solution for this dataset.
 
 ```{r}
 rf.pred <- predict(rf.fit, newdata = df[-rowTrain,])
-confusionMatrix(data = rf.pred,
-                reference = df$quality[-rowTrain],
-                positive = "good")
+#confusionMatrix(data = rf.pred,
+#                reference = df$quality[-rowTrain],
+#                positive = "good")
 ```
 
 
+# Supplementary figures
+
+\begin{center}
+\includegraphics{./1.png}
+\end{center}
+\begin{center}
+Supplementary Fig 1. Correlation
+\end{center}
+
+
+\begin{center}
+\includegraphics{./2.png}
+\end{center}
+\begin{center}
+Supplementary Fig 2. Density
+\end{center}
+
+\begin{center}
+\includegraphics{./3.png}
+\end{center}
+\begin{center}
+Supplementary Fig 3. Random forest
+\end{center}
+
+\begin{center}
+\includegraphics{./4.png}
+\end{center}
+\begin{center}
+Supplementary Fig 4. Boosting
+\end{center}
+
+\begin{center}
+\includegraphics{./5.png}
+\end{center}
+\begin{center}
+Supplementary Fig 5. SVMR
+\end{center}
+
+\begin{center}
+\includegraphics{./6.png}
+\end{center}
+\begin{center}
+Supplementary Fig 6. Test ROC
+\end{center}
+
+\begin{center}
+\includegraphics{./7.png}
+\end{center}
+\begin{center}
+Supplementary Fig 7. variable importance
+\end{center}
+
+\begin{center}
+\includegraphics{./8.png}
+\end{center}
+\begin{center}
+Supplementary Fig 8. PDP
+\end{center}
+
+\begin{center}
+\includegraphics{./9.png}
+\end{center}
+\begin{center}
+Supplementary Fig 9. ICE
+\end{center}
